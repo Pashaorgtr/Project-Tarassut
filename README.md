@@ -63,6 +63,22 @@ sudo python3 main.py
 
 Program çalışmaya başladığında, mevcut ağ arayüzlerinden birini seçmeniz istenecektir. Genellikle varsayılan seçeneği (Tüm Arayüzler) seçmek yeterlidir.
 
+## Windows Kullanıcıları İçin Uyarı
+
+🪟 **Windows kullanıyorsanız**, Project Tarassut aracının ağ trafiğini dinleyebilmesi için sisteminizde **Npcap** yüklü olmalıdır. Aksi takdirde program çalışırken hatalar alabilirsiniz.
+
+### 🔧 Npcap Nasıl Kurulur?
+
+1. Npcap'in en güncel sürümünü aşağıdaki bağlantıdan indirin:
+   👉 [Npcap 1.83 İndir](https://npcap.com/dist/npcap-1.83.exe)
+
+2. İndirme tamamlandıktan sonra, yükleyiciyi çalıştırarak varsayılan ayarlarla kurun. "Install Npcap in WinPcap API-compatible Mode" seçeneğini **işaretlemeyi unutmayın.**
+
+3. Kurulum hakkında detaylı yardım isterseniz aşağıdaki videoyu izleyebilirsiniz:
+   🎥 [Npcap Kurulum Videosu](https://www.youtube.com/watch?v=lOcf0BylnO4)
+
+> 💡 **Not:** Npcap, Windows üzerinde `scapy` ve benzeri ağ dinleme kütüphanelerinin düzgün çalışması için gereklidir. Linux kullanıcılarının bu adıma ihtiyacı yoktur.
+
 ## Yasal Sorumluluk ve Uyarılar
 
 *   **Yasalara Uygunluk:** Bu aracı kullanırken bulunduğunuz ülkenin veya bölgenin yasalarına ve yönetmeliklerine uymak tamamen sizin sorumluluğunuzdadır. Yasa dışı faaliyetler için kullanılması kesinlikle yasaktır.
