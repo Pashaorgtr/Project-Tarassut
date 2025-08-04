@@ -274,7 +274,7 @@ class AdvancedIPv4Harvester:
                     "linkedin": user_info.get("USER_LINKEDIN", ""),
                     "github": user_info.get("USER_GITHUB", "")
                 },
-                "source": "AdvancedIPv4Harvester_test2.py",
+                "source": "main.py",
                 "collected_at": datetime.now().isoformat(),
                 "ipv4_addresses": ip_list
             }
