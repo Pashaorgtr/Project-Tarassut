@@ -75,9 +75,9 @@ Program çalışmaya başladığında, mevcut ağ arayüzlerinden birini seçmen
 Bu proje, topluluk katkılarıyla büyür. Katkıda bulunmak isterseniz:
 
 1.  Projeyi "Fork" edin.
-2.  Yeni bir "Branch" oluşturun (`git checkout -b ozellik/yeni-ozellik`).
-3.  Değişikliklerinizi yapın ve "Commit" edin (`git commit -am 'Yeni bir özellik eklendi'`).
-4.  "Branch"inizi "Push" edin (`git push origin ozellik/yeni-ozellik`).
+2.  Yeni bir "Branch" oluşturun.
+3.  Değişikliklerinizi yapın ve "Commit" edin.
+4.  "Branch"inizi "Push" edin.
 5.  Bir "Pull Request" (PR) oluşturun.
 
 Tüm katkılarınız için şimdiden teşekkür ederiz!
