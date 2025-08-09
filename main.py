@@ -3,8 +3,15 @@
 
 """
 Project Tarassut - pasha.org.tr Projesi
+Geliştirici: Hasan Yasin Yaşar
+Lisans: PSH 1.0
 
-Bu script, çoklu yöntemlerle IPv4 adreslerini toplar ve pasha.org.tr API'sine gönderir.
+Bu script, ağ trafiğini pasif olarak dinleyerek internet (WAN) üzerindeki
+IPv4 adresleri ile bu adreslerle ilişkili alan adlarını (domain) tespit eder.
+Toplanan veriler, bir Pasif DNS (PDNS) haritası oluşturmak üzere periyodik
+olarak pasha.org.tr API'sine gönderilir.
+
+Bu araç, ağ trafiği analizi ve siber güvenlik araştırmaları için veri toplamayı amaçlar.
 """
 
 import os
@@ -14,14 +21,11 @@ import time
 import signal
 import logging
 import threading
-import subprocess
-from dotenv import load_dotenv, set_key
-from dotenv import dotenv_values
+from dotenv import load_dotenv, set_key, dotenv_values
 from datetime import datetime
 from pathlib import Path
 import socket
 import struct
-from datetime import datetime
 from typing import Optional, List, Dict, Set
 from collections import defaultdict
 import re
@@ -29,33 +33,26 @@ import re
 try:
     import requests
 except ImportError:
-    print("HATA: Requests kütüphanesi bulunamadı.")
+    print("HATA: Gerekli 'requests' kütüphanesi bulunamadı.")
     print("Lütfen 'pip install requests' komutu ile kurun.")
     sys.exit(1)
 
 try:
     import scapy.all as scapy
-    from scapy.layers.inet import IP, UDP, TCP, ICMP
-    from scapy.layers.dns import DNS, DNSQR, DNSRR
-    from scapy.layers.dhcp import DHCP, BOOTP
-    from scapy.layers.l2 import ARP, Ether
-    from scapy.layers.http import HTTPRequest, HTTPResponse
+    from scapy.layers.inet import IP, TCP, DNS, DNSRR
+    from scapy.layers.http import HTTPRequest
 except ImportError:
-    print("HATA: Scapy kütüphanesi bulunamadı.")
-    print("Lütfen 'pip install scapy scapy[complete]' komutu ile kurun.")
+    print("HATA: Gerekli 'scapy' kütüphanesi bulunamadı.")
+    print("Lütfen 'pip install scapy' komutu ile kurun.")
     sys.exit(1)
 
 # --- Yapılandırma ---
 CONFIG = {
     "API_URL": "https://pasha.org.tr/api/tarassut",
-    "SAVE_INTERVAL_SECONDS": 360, # 6 dakika
+    "SAVE_INTERVAL_SECONDS": 300,  # 5 dakika
     "LOG_LEVEL": logging.INFO,
-    "DNS_RESOLUTION_ENABLED": True,
-    "NETWORK_DISCOVERY_ENABLED": True,
     "HTTP_ANALYSIS_ENABLED": True,
     "PASSIVE_DNS_ENABLED": True,
-    "NETWORK_SCAN_INTERVAL": 900,  # 15 dakika
-    "MAX_CONCURRENT_RESOLVES": 50,
 }
 
 # --- Loglama Kurulumu ---
@@ -66,7 +63,10 @@ logging.basicConfig(
 )
 
 def ensure_user_info():
-    """Kullanıcı bilgileri alınır ve .env dosyasına yazılır"""
+    """
+    Kullanıcı bilgilerinin (.env dosyasında) mevcut olduğunu kontrol eder.
+    Eksik bilgi varsa, kullanıcıdan alınarak dosyaya yazılır.
+    """
     dotenv_path = Path(".env")
     load_dotenv(dotenv_path)
 
@@ -78,195 +78,145 @@ def ensure_user_info():
         "USER_GITHUB": "GitHub"
     }
 
-    missing = [key for key in required_fields if not os.getenv(key)]
+    missing_fields = [key for key in required_fields if not os.getenv(key)]
 
-    if missing:
-        print("Lütfen kullanıcı bilgilerinizi girin:")
-        for key in missing:
+    if missing_fields:
+        print("Project Tarassut'a katkıda bulunmak için lütfen kullanıcı bilgilerinizi girin:")
+        for key in missing_fields:
             value = input(f"{required_fields[key]}: ").strip()
             set_key(dotenv_path, key, value)
+        print("✓ Bilgiler kaydedildi. Program başlatılıyor...")
     else:
         print("✓ Kullanıcı bilgileri bulundu.")
 
 
-class AdvancedIPv4Harvester:
-    """Gelişmiş IPv4 adres toplama sınıfı - çoklu yöntemlerle keşif"""
+class WANHarvester:
+    """
+    Sadece internet (WAN) trafiğini analiz ederek IP adresleri ve alan adları
+    arasında Pasif DNS (PDNS) haritalaması yapan sınıf.
+    """
 
     def __init__(self):
-        self.ipv4_addresses = set()  # Sadece benzersiz IPv4 adresleri
+        """Harvester sınıfını başlatır."""
+        self.ip_to_domains = defaultdict(set)
         self.running = False
         self.packet_count = 0
         self.lock = threading.Lock()
-        self.dns_cache = {}  # DNS çözümleme cache'i
 
-    def _add_ip(self, ip: str):
-        """IPv4 adresini listeye ekle"""
-        if not self._is_valid_ipv4(ip):
-            return
-
-        if self._is_private_ip(ip):
+    def _add_mapping(self, ip: str, domain: Optional[str] = None):
+        """
+        Bir genel (public) IP adresini ve (varsa) ilişkili alan adını bellekteki
+        haritaya güvenli bir şekilde ekler.
+        """
+        if not self._is_valid_ipv4(ip) or self._is_private_ip(ip):
             return
 
         with self.lock:
-            self.ipv4_addresses.add(ip)
+            if domain:
+                clean_domain = re.sub(r'^\*\.', '', domain).strip().lower()
+                self.ip_to_domains[ip].add(clean_domain)
+            else:
+                if ip not in self.ip_to_domains:
+                    self.ip_to_domains[ip] = set()
 
     def _is_private_ip(self, ip: str) -> bool:
-        """Yerel (private) IPv4 adreslerini filtrele"""
+        """Verilen IP adresinin özel (private) bir ağa ait olup olmadığını kontrol eder (RFC 1918)."""
         try:
-            parts = [int(part) for part in ip.split('.')]
-            if parts[0] == 10:
+            if ip.startswith("127."):
                 return True
-            if parts[0] == 172 and 16 <= parts[1] <= 31:
-                return True
-            if parts[0] == 192 and parts[1] == 168:
-                return True
-            if parts[0] == 127:
-                return True
-        except ValueError:
+            ip_addr = struct.unpack('!I', socket.inet_aton(ip))[0]
+            return (
+                (ip_addr >= 167772160 and ip_addr <= 184549375) or  # 10.0.0.0/8
+                (ip_addr >= 2886729728 and ip_addr <= 2887778303) or  # 172.16.0.0/12
+                (ip_addr >= 3232235520 and ip_addr <= 3232301055)    # 192.168.0.0/16
+            )
+        except (socket.error, ValueError):
             return False
-        return False
-
 
     def _is_valid_ipv4(self, ip: str) -> bool:
-        """IPv4 adres formatını kontrol et"""
+        """Verilen string'in geçerli bir IPv4 adresi formatında olup olmadığını kontrol eder."""
         try:
-            parts = ip.split('.')
-            return len(parts) == 4 and all(0 <= int(part) <= 255 for part in parts)
-        except ValueError:
+            socket.inet_aton(ip)
+            return True
+        except socket.error:
             return False
 
     def _packet_handler(self, packet: scapy.packet.Packet):
-        """Ana paket işleyici - tüm protokolleri analiz eder"""
+        """
+        Scapy tarafından yakalanan her bir paketi işleyen ana fonksiyondur.
+        Paketleri ilgili analiz fonksiyonlarına yönlendirir.
+        """
         self.packet_count += 1
-        
-        if packet.haslayer(IP):
-            self._analyze_ip_packet(packet)
-        
-        if packet.haslayer(DNS):
+
+        if not packet.haslayer(IP):
+            return
+
+        src_ip = packet[IP].src
+        dst_ip = packet[IP].dst
+        if self._is_private_ip(src_ip) and self._is_private_ip(dst_ip):
+            return
+
+        self._analyze_ip_packet(packet)
+
+        if CONFIG["PASSIVE_DNS_ENABLED"] and packet.haslayer(DNS):
             self._analyze_dns_packet(packet)
-            
-        if packet.haslayer(HTTPRequest) or packet.haslayer(HTTPResponse):
+
+        if CONFIG["HTTP_ANALYSIS_ENABLED"] and packet.haslayer(HTTPRequest):
             self._analyze_http_packet(packet)
 
         if self.packet_count % 500 == 0:
             logging.info(
                 f"İşlenen paket: {self.packet_count}, "
-                f"Toplam IPv4: {len(self.ipv4_addresses)}"
+                f"Toplam Eşsiz IPv4: {len(self.ip_to_domains)}"
             )
 
-    def _analyze_ip_packet(self, packet):
-        """IP paketlerini analiz et - sadece IP adreslerini topla"""
-        src_ip = packet[IP].src
-        dst_ip = packet[IP].dst
-        
-        self._add_ip(src_ip)
-        self._add_ip(dst_ip)
+    def _analyze_ip_packet(self, packet: scapy.packet.Packet):
+        """IP katmanından kaynak ve hedef IP adreslerini çıkarır."""
+        self._add_mapping(packet[IP].src)
+        self._add_mapping(packet[IP].dst)
 
-    def _analyze_dns_packet(self, packet):
-        """DNS paketlerini analiz et ve A kayıtlarından IP adreslerini çıkar"""
-        if not CONFIG["PASSIVE_DNS_ENABLED"]:
+    def _analyze_dns_packet(self, packet: scapy.packet.Packet):
+        """DNS yanıt paketlerindeki (A kaydı) alan adı ve IP eşleşmelerini çıkarır."""
+        if not packet.haslayer(DNSRR):
             return
-            
-        dns = packet[DNS]
-        
-        if dns.qr == 1:
-            if dns.ancount > 0:
-                for i in range(dns.ancount):
-                    rr = dns.an[i]
-                    if rr.type == 1:
-                        ip = rr.rdata
-                        self._add_ip(ip)
-                        logging.debug(f"DNS A kaydından IP: {ip}")
 
-    def _analyze_http_packet(self, packet):
-        """HTTP paketlerini analiz et ve Host başlıklarından IP çıkar"""
-        if not CONFIG["HTTP_ANALYSIS_ENABLED"]:
-            return
-            
+        for i in range(packet[DNS].ancount):
+            rr = packet[DNS].an[i]
+            if rr.type == 1 and hasattr(rr, 'rdata'):
+                domain = rr.rrname.decode('utf-8', errors='ignore').rstrip('.')
+                ip = rr.rdata
+                self._add_mapping(ip, domain)
+                logging.debug(f"[PDNS EŞLEŞMESİ] DNS: {domain} -> {ip}")
+
+    def _analyze_http_packet(self, packet: scapy.packet.Packet):
+        """Şifrelenmemiş HTTP isteklerindeki 'Host' başlığından alan adı-IP eşleşmesini çıkarır."""
         try:
-            if packet.haslayer(HTTPRequest):
-                host = packet[HTTPRequest].Host
-                if host:
-                    domain = host.decode('utf-8') if isinstance(host, bytes) else str(host)
-                    self._resolve_domain_async(domain)
+            host_bytes = packet[HTTPRequest].Host
+            if host_bytes:
+                domain = host_bytes.decode('utf-8', errors='ignore')
+                ip = packet[IP].dst
+                self._add_mapping(ip, domain)
+                logging.debug(f"[PDNS EŞLEŞMESİ] HTTP: {domain} -> {ip}")
         except Exception as e:
-            logging.debug(f"HTTP analiz hatası: {e}")
-
-    def _resolve_domain_async(self, domain: str):
-        """Domain adını asenkron olarak çözümle - sadece IP'yi kaydet"""
-        if domain in self.dns_cache:
-            return
-            
-        def resolve():
-            try:
-                ip = socket.gethostbyname(domain)
-                self.dns_cache[domain] = ip
-                self._add_ip(ip)
-            except socket.gaierror:
-                pass
-                
-        threading.Thread(target=resolve, daemon=True).start()
-
-    def _network_discovery_loop(self):
-        """Periyodik network discovery"""
-        while self.running:
-            time.sleep(CONFIG["NETWORK_SCAN_INTERVAL"])
-            if self.running and CONFIG["NETWORK_DISCOVERY_ENABLED"]:
-                self._discover_local_network()
-
-    def _discover_local_network(self):
-        """Yerel ağı keşfet - sadece IP adreslerini topla"""
-        logging.info("Yerel ağ keşfi başlatılıyor...")
-        
-        try:
-            result = subprocess.run(['ip', 'route', 'show', 'default'], 
-                                  capture_output=True, text=True, timeout=10)
-            if result.returncode == 0:
-                gateway = result.stdout.split()[2]
-                self._add_ip(gateway)
-                
-                network = '.'.join(gateway.split('.')[:-1]) + '.0/24'
-                self._ping_sweep(network)
-                
-        except Exception as e:
-            logging.debug(f"Network discovery hatası: {e}")
-
-    def _ping_sweep(self, network: str):
-        """Ping sweep ile aktif hostları bul - sadece IP adreslerini kaydet"""
-        network_base = network.split('/')[0].rsplit('.', 1)[0]
-        
-        def ping_host(ip):
-            try:
-                result = subprocess.run(['ping', '-c', '1', '-W', '1', ip], 
-                                      capture_output=True, timeout=2)
-                if result.returncode == 0:
-                    self._add_ip(ip)
-            except:
-                pass
-        
-        threads = []
-        for i in range(1, 51):
-            ip = f"{network_base}.{i}"
-            t = threading.Thread(target=ping_host, args=(ip,), daemon=True)
-            threads.append(t)
-            t.start()
-            
-        for t in threads:
-            t.join(timeout=5)
+            logging.debug(f"HTTP paket analizi sırasında hata: {e}")
 
     def send_data_to_api(self):
-        """Toplanan IPv4 adreslerini API'ye gönderir."""
+        """Toplanan IP-domain haritasını merkezi API'ye gönderir."""
         with self.lock:
-            if not self.ipv4_addresses:
-                logging.info("Gönderilecek yeni IP adresi bulunmuyor.")
+            if not self.ip_to_domains:
+                logging.info("API'ye gönderilecek yeni veri bulunmuyor.")
                 return
-            ip_list = sorted(list(self.ipv4_addresses))
+            
+            ip_mappings_list = [
+                {"ip": ip, "domains": sorted(list(domains))}
+                for ip, domains in self.ip_to_domains.items()
+            ]
 
-        logging.info(f"Toplanan {len(ip_list)} IPv4 adresi API'ye gönderiliyor...")
+        logging.info(f"Toplanan {len(ip_mappings_list)} IP haritası API'ye gönderiliyor...")
 
         try:
             user_info = dotenv_values(".env")
-            data = {
+            payload = {
                 "user": {
                     "fullname": user_info.get("USER_FULLNAME", ""),
                     "username": user_info.get("USER_USERNAME", ""),
@@ -274,117 +224,126 @@ class AdvancedIPv4Harvester:
                     "linkedin": user_info.get("USER_LINKEDIN", ""),
                     "github": user_info.get("USER_GITHUB", "")
                 },
-                "source": "main.py",
+                "source": "app.py (PDNS-Harvester)",
                 "collected_at": datetime.now().isoformat(),
-                "ipv4_addresses": ip_list
+                "ip_mappings": ip_mappings_list
             }
 
             headers = {"Content-Type": "application/json"}
-            response = requests.post(CONFIG["API_URL"], json=data, headers=headers, timeout=30)
+            response = requests.post(CONFIG["API_URL"], json=payload, headers=headers, timeout=30)
 
             if response.status_code == 201:
-                inserted_id = response.json().get("insertedId", "N/A")
-                logging.info(f"Veri başarıyla gönderildi. Kayıt ID: {inserted_id}")
+                logging.info(f"Veri başarıyla gönderildi. Sunucu yanıtı: {response.json()}")
                 with self.lock:
-                    self.ipv4_addresses.clear()
+                    self.ip_to_domains.clear()
             else:
                 logging.error(f"API'ye veri gönderilemedi. Durum Kodu: {response.status_code}, Yanıt: {response.text}")
 
         except requests.exceptions.RequestException as e:
-            logging.error(f"API isteği sırasında bir hata oluştu: {e}")
+            logging.error(f"API bağlantı hatası: {e}")
         except Exception as e:
             logging.error(f"Veri gönderme sırasında beklenmedik bir hata oluştu: {e}")
 
     def _auto_save_loop(self):
-        """Periyodik gönderme döngüsü"""
+        """Belirlenen aralıklarla API'ye veri gönderimini tetikleyen döngü."""
         while self.running:
             time.sleep(CONFIG["SAVE_INTERVAL_SECONDS"])
             if self.running:
                 self.send_data_to_api()
 
-    def start_monitoring(self, interface: Optional[str]):
-        """IPv4 keşif sistemini başlat"""
+    def start_monitoring(self, interface: Optional[str] = None):
+        """
+        Ağ dinleme işlemini başlatır ve programın kesintisiz çalışmasını sağlar.
+        Olası dinleme hatalarında kendini yeniden başlatır.
+        """
         self.running = True
         
-        save_thread = threading.Thread(target=self._auto_save_loop, daemon=True)
-        save_thread.start()
+        threading.Thread(target=self._auto_save_loop, daemon=True).start()
         
-        if CONFIG["NETWORK_DISCOVERY_ENABLED"]:
-            discovery_thread = threading.Thread(target=self._network_discovery_loop, daemon=True)
-            discovery_thread.start()
-
         print("\n" + "=" * 70)
-        print("         GELİŞMİŞ IPv4 KEŞİF SİSTEMİ BAŞLATILDI")
-        print(f"           (pasha.org.tr advanced discovery)")
+        print("     Project Tarassut - İnternet Trafik Haritalama Aracı")
         print("=" * 70)
-        print(f"Aktif özellikler:")
-        print(f"  ✓ Ağ trafiği dinleme")
-        print(f"  {'✓' if CONFIG['PASSIVE_DNS_ENABLED'] else '✗'} Pasif DNS analizi")
-        print(f"  {'✓' if CONFIG['HTTP_ANALYSIS_ENABLED'] else '✗'} HTTP Host analizi")
-        print(f"  {'✓' if CONFIG['NETWORK_DISCOVERY_ENABLED'] else '✗'} Aktif network keşfi")
-        print(f"  ✓ Veriler pasha.org.tr API'sine gönderiliyor")
-        logging.info(f"API URL: {CONFIG['API_URL']}")
+        print("✓ Pasif DNS ve HTTP analizi ile ağ trafiği dinleniyor.")
+        print(f"✓ Veriler her {CONFIG['SAVE_INTERVAL_SECONDS']} saniyede bir pasha.org.tr API'sine gönderilecek.")
+        print("✓ Çıkmak için CTRL+C tuşlarına basın.")
         logging.info(f"İzlenen arayüz: {interface or 'Tüm Arayüzler'}")
         print("=" * 70 + "\n")
 
-        try:
-            scapy.sniff(
-                iface=interface,
-                prn=self._packet_handler,
-                store=False,
-                stop_filter=lambda p: not self.running
-            )
-        except (PermissionError, OSError):
-            logging.error("HATA: Ağ arayüzünü dinleme yetkiniz yok. Yönetici olarak çalıştırın.")
-        except Exception as e:
-            logging.critical(f"Beklenmedik bir hata oluştu: {e}")
-        finally:
-            self.stop()
+        while self.running:
+            try:
+                scapy.sniff(
+                    iface=interface,
+                    prn=self._packet_handler,
+                    store=False,
+                    stop_filter=lambda p: not self.running
+                )
+            except (PermissionError, OSError):
+                logging.critical("HATA: Ağ dinleme yetkisi yok. Lütfen programı 'sudo' ile çalıştırın.")
+                self.running = False
+            except Exception as e:
+                if not self.running:
+                    break
+                logging.warning(f"Ağ dinleyicide bir hata oluştu: {e}")
+                logging.info("Dinleyici 10 saniye içinde yeniden başlatılacak...")
+                time.sleep(10)
+        
+        self.stop()
 
     def stop(self):
-        """İzlemeyi durdur ve son gönderim yap"""
+        """Tüm işlemleri güvenli bir şekilde durdurur ve son verileri API'ye gönderir."""
         if self.running:
-            logging.info("Durdurma sinyali alındı, son gönderim yapılıyor...")
+            logging.info("Durdurma sinyali alındı. Son veriler gönderiliyor...")
             self.running = False
+            time.sleep(2)
             self.send_data_to_api()
 
 def check_permissions():
-    """Root yetki kontrolü"""
+    """Programın root/yönetici yetkileriyle çalışıp çalışmadığını kontrol eder."""
     if os.name != 'nt' and os.geteuid() != 0:
-        logging.error("Bu program root yetkisi gerektirir. Lütfen 'sudo' ile çalıştırın.")
+        logging.error("Bu programın ağ trafiğini dinleyebilmesi için root yetkisi gereklidir.")
+        print("Lütfen 'sudo python3 app.py' komutu ile çalıştırın.")
         sys.exit(1)
 
 def select_interface() -> Optional[str]:
-    """Ağ arayüzü seçimi"""
+    """Kullanıcının dinlemek istediği ağ arayüzünü seçmesini sağlar."""
     try:
-        interfaces: List[str] = scapy.get_if_list()
+        interfaces = [iface.name for iface in scapy.get_working_ifaces()]
+        if not interfaces:
+            logging.warning("Kullanılabilir ağ arayüzü bulunamadı.")
+            return None
+
         print("\nMevcut Ağ Arayüzleri:")
-        for i, iface in enumerate(interfaces, 1):
-            print(f"  {i}. {iface}")
-        print("  0. Tüm Arayüzler (Varsayılan)")
-        choice_str = input(f"\nİzlenecek arayüzü seçin [0-{len(interfaces)}]: ")
-        choice = int(choice_str)
-        return interfaces[choice - 1] if 0 < choice <= len(interfaces) else None
-    except Exception:
-        logging.info("Arayüz seçilemedi. Tüm arayüzler dinlenecek.")
+        for i, iface_name in enumerate(interfaces, 1):
+            print(f"  {i}. {iface_name}")
+        
+        default_choice = 1
+        choice_str = input(f"\nİzlenecek arayüz numarasını seçin [Varsayılan: {default_choice}]: ")
+        
+        choice = int(choice_str) if choice_str.isdigit() else default_choice
+        
+        return interfaces[choice - 1] if 0 < choice <= len(interfaces) else interfaces[0]
+    except Exception as e:
+        logging.warning(f"Arayüz seçimi sırasında bir hata oluştu, varsayılan arayüz kullanılacak. Hata: {e}")
         return None
 
 def main():
-    """Ana program"""
+    """Ana program fonksiyonu. Tüm süreci başlatır ve yönetir."""
     check_permissions()
     ensure_user_info()
     interface = select_interface()
     
-    harvester = AdvancedIPv4Harvester()
+    harvester = WANHarvester()
     
     def signal_handler(sig, frame):
+        print("\nCTRL+C algılandı. Program güvenli bir şekilde kapatılıyor...")
         harvester.stop()
-        sys.exit(0)
     
     signal.signal(signal.SIGINT, signal_handler)
     signal.signal(signal.SIGTERM, signal_handler)
 
-    harvester.start_monitoring(interface)
+    harvester.start_monitoring(interface=interface)
+    
+    logging.info("Program sonlandırıldı.")
 
 if __name__ == "__main__":
     main()
