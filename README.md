@@ -116,6 +116,6 @@ Bu, standart açık kaynak lisanslarından (MIT, GPL, Apache vb.) farklıdır ve
 
 ---
 
-📜 **Önemli Uyarı:** Bu yazılımı kullanmadan önce, projenin kök dizininde bulunan `LICENSE` dosyasındaki tüm şart ve koşulları okuyup anladığınızdan emin olmalısınız. Lisansın ticari kullanım yasağını ihlal etmek, lisans sözleşmesinde belirtilen ciddi maddi yaptırımları otomatik olarak devreye sokar.
+📜 **Önemli Uyarı:** Bu yazılımı kullanmadan önce, projenin kök dizininde bulunan `LICENSE.md` dosyasındaki tüm şart ve koşulları okuyup anladığınızdan emin olmalısınız. Lisansın ticari kullanım yasağını ihlal etmek, lisans sözleşmesinde belirtilen ciddi maddi yaptırımları otomatik olarak devreye sokar.
 
 **Yazılımı kullanmaya başlamanız, PSH 1.0 Lisansı'nın tüm şartlarını kabul ettiğiniz anlamına gelir.**
