@@ -97,3 +97,25 @@ Bu proje, topluluk katkılarıyla büyür. Katkıda bulunmak isterseniz:
 5.  Bir "Pull Request" (PR) oluşturun.
 
 Tüm katkılarınız için şimdiden teşekkür ederiz!
+
+## Lisanslama (Licensing)
+
+Project Tarassut, pasha.org.tr'ye özgü, özel bir lisans olan **Pasha Kaynak Lisansı 1.0 (PSH 1.0)** altında lisanslanmıştır.
+
+Bu, standart açık kaynak lisanslarından (MIT, GPL, Apache vb.) farklıdır ve projenin ticari amaçlarla kullanılmasını kesin bir dille yasaklarken, akademik ve kişisel kullanımı teşvik eder.
+
+### Lisansın Ana Hatları
+
+#### ✅ İzin Verilenler (Permissions):
+*   Kodu kişisel, akademik veya eğitim amaçlı incelemek, kopyalamak ve değiştirmek.
+*   Yazılımı ve değiştirilmiş versiyonlarını, kar amacı gütmeyen topluluk projelerinde kullanmak ve dağıtmak.
+
+#### ❌ Kesinlikle Yasaklananlar (Strict Prohibitions):
+*   Yazılımı veya türevlerini satmak, kiralamak veya ücretli bir hizmetin (SaaS vb.) parçası olarak sunmak.
+*   Yazılımı, herhangi bir ticari şirketin, girişimin veya gelir getirici faaliyetin operasyonlarında kullanmak.
+
+---
+
+📜 **Önemli Uyarı:** Bu yazılımı kullanmadan önce, projenin kök dizininde bulunan `LICENSE` dosyasındaki tüm şart ve koşulları okuyup anladığınızdan emin olmalısınız. Lisansın ticari kullanım yasağını ihlal etmek, lisans sözleşmesinde belirtilen ciddi maddi yaptırımları otomatik olarak devreye sokar.
+
+**Yazılımı kullanmaya başlamanız, PSH 1.0 Lisansı'nın tüm şartlarını kabul ettiğiniz anlamına gelir.**
