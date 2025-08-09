@@ -126,9 +126,9 @@ class WANHarvester:
                 return True
             ip_addr = struct.unpack('!I', socket.inet_aton(ip))[0]
             return (
-                (ip_addr >= 167772160 and ip_addr <= 184549375) or  # 10.0.0.0/8
-                (ip_addr >= 2886729728 and ip_addr <= 2887778303) or  # 172.16.0.0/12
-                (ip_addr >= 3232235520 and ip_addr <= 3232301055)    # 192.168.0.0/16
+                (ip_addr >= 167772160 and ip_addr <= 184549375) or
+                (ip_addr >= 2886729728 and ip_addr <= 2887778303) or
+                (ip_addr >= 3232235520 and ip_addr <= 3232301055)
             )
         except (socket.error, ValueError):
             return False
@@ -164,11 +164,7 @@ class WANHarvester:
         if CONFIG["HTTP_ANALYSIS_ENABLED"] and packet.haslayer(HTTPRequest):
             self._analyze_http_packet(packet)
 
-        if self.packet_count % 500 == 0:
-            logging.info(
-                f"İşlenen paket: {self.packet_count}, "
-                f"Toplam Eşsiz IPv4: {len(self.ip_to_domains)}"
-            )
+        # --- KALDIRILDI: Sürekli akan "İşlenen paket" logu kaldırıldı. ---
 
     def _analyze_ip_packet(self, packet: scapy.packet.Packet):
         """IP katmanından kaynak ve hedef IP adreslerini çıkarır."""
@@ -204,7 +200,8 @@ class WANHarvester:
         """Toplanan IP-domain haritasını merkezi API'ye gönderir."""
         with self.lock:
             if not self.ip_to_domains:
-                logging.info("API'ye gönderilecek yeni veri bulunmuyor.")
+                # --- DEĞİŞTİRİLDİ: Mesaj daha anlaşılır hale getirildi. ---
+                logging.info("Periyodik kontrol: Gönderilecek yeni veri birikmedi.")
                 return
             
             ip_mappings_list = [
@@ -212,7 +209,13 @@ class WANHarvester:
                 for ip, domains in self.ip_to_domains.items()
             ]
 
-        logging.info(f"Toplanan {len(ip_mappings_list)} IP haritası API'ye gönderiliyor...")
+        # --- DEĞİŞTİRİLDİ: Daha detaylı bir özet mesajı oluşturuldu. ---
+        total_ips = len(ip_mappings_list)
+        total_domains = sum(len(mapping["domains"]) for mapping in ip_mappings_list)
+
+        logging.info(
+            f"VERİ GÖNDERİLİYOR -> {total_ips} benzersiz IP ve bu IP'lerle ilişkili {total_domains} domain eşleşmesi API'ye aktarılıyor..."
+        )
 
         try:
             user_info = dotenv_values(".env")
@@ -233,7 +236,7 @@ class WANHarvester:
             response = requests.post(CONFIG["API_URL"], json=payload, headers=headers, timeout=30)
 
             if response.status_code == 201:
-                logging.info(f"Veri başarıyla gönderildi. Sunucu yanıtı: {response.json()}")
+                logging.info(f"VERİ GÖNDERİLDİ -> Sunucu yanıtı başarılı.")
                 with self.lock:
                     self.ip_to_domains.clear()
             else:
@@ -263,8 +266,9 @@ class WANHarvester:
         print("\n" + "=" * 70)
         print("     Project Tarassut - İnternet Trafik Haritalama Aracı")
         print("=" * 70)
-        print("✓ Pasif DNS ve HTTP analizi ile ağ trafiği dinleniyor.")
-        print(f"✓ Veriler her {CONFIG['SAVE_INTERVAL_SECONDS']} saniyede bir pasha.org.tr API'sine gönderilecek.")
+        print(f"✓ Pasif DNS ve HTTP analizi ile ağ trafiği dinleniyor.")
+        print(f"✓ Toplanan veriler her {CONFIG['SAVE_INTERVAL_SECONDS']} saniyede bir pasha.org.tr API'sine gönderilecek.")
+        print("✓ Program arka planda sessizce çalışacaktır. Özetler konsola yazdırılacaktır.")
         print("✓ Çıkmak için CTRL+C tuşlarına basın.")
         logging.info(f"İzlenen arayüz: {interface or 'Tüm Arayüzler'}")
         print("=" * 70 + "\n")
@@ -301,7 +305,7 @@ def check_permissions():
     """Programın root/yönetici yetkileriyle çalışıp çalışmadığını kontrol eder."""
     if os.name != 'nt' and os.geteuid() != 0:
         logging.error("Bu programın ağ trafiğini dinleyebilmesi için root yetkisi gereklidir.")
-        print("Lütfen 'sudo python3 app.py' komutu ile çalıştırın.")
+        print("Lütfen 'sudo python3 main.py' komutu ile çalıştırın.")
         sys.exit(1)
 
 def select_interface() -> Optional[str]:
