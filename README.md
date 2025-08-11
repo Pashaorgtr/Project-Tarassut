@@ -45,7 +45,6 @@ sudo python3 main.py
 ```
 
 Program sizden aşağıdaki bilgileri girmenizi isteyecektir:
-*   İsim Soyisim
 *   Kullanıcı Adı
 *   E-posta
 *   LinkedIn Profil URL'si
