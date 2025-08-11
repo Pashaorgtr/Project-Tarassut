@@ -60,7 +60,7 @@ Kurulum tamamlandıktan sonra, programı root (yönetici) yetkileriyle çalışt
 sudo python3 main.py
 ```
 
-Program çalışmaya başladığında, mevcut ağ arayüzlerinden birini seçmeniz istenecektir. Genellikle varsayılan seçeneği (Tüm Arayüzler) seçmek yeterlidir.
+Program çalışmaya başladığında tüm ağ arayüzlerini dinlemeye alıp veri kaydetmeye başlayacaktır.
 
 ## Windows Kullanıcıları İçin Uyarı
 
