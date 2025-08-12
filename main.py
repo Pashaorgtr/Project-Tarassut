@@ -90,6 +90,7 @@ def ensure_user_info():
     load_dotenv(dotenv_path)
 
     required_fields = {
+        "USER_FULLNAME": "Tam Adınız",
         "USER_USERNAME": "Kullanıcı Adı",
         "USER_EMAIL": "E-posta",
         "USER_LINKEDIN": "LinkedIn",
@@ -160,6 +161,7 @@ class DNSLogger:
             user_info = dotenv_values(".env")
             payload = {
                 "user": {
+                    "fullname": user_info.get("USER_FULLNAME", ""),
                     "username": user_info.get("USER_USERNAME", ""),
                     "email": user_info.get("USER_EMAIL", ""),
                     "linkedin": user_info.get("USER_LINKEDIN", ""),
