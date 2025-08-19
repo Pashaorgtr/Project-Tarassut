@@ -167,7 +167,7 @@ class DNSLogger:
                     "linkedin": user_info.get("USER_LINKEDIN", ""),
                     "github": user_info.get("USER_GITHUB", "")
                 },
-                "source": "test.py (DNS-Logger)",
+                "source": "main.py (DNS-Logger)",
                 "collected_at": datetime.now().isoformat(),
                 "ip_mappings": ip_mappings_list
             }
@@ -213,7 +213,7 @@ class DNSLogger:
             sniff(filter=bpf_filter, prn=self._packet_callback, store=0, stop_filter=lambda p: not self.running)
         except PermissionError:
             logging.error("\n[HATA] İzin Hatası! Bu betiği Yönetici veya root yetkileriyle çalıştırmalısınız.")
-            print("Lütfen 'sudo python3 test.py' komutu ile çalıştırın.")
+            print("Lütfen 'sudo python3 main.py' komutu ile çalıştırın.")
             sys.exit(1)
         except Exception as e:
             logging.error(f"\nDinleme sırasında bir hata oluştu: {e}")
@@ -255,7 +255,7 @@ def check_permissions():
     """Programın root/yönetici yetkileriyle çalışıp çalışmadığını kontrol eder."""
     if os.name != 'nt' and os.geteuid() != 0:
         logging.error("Bu programın ağ trafiğini dinleyebilmesi için root yetkisi gereklidir.")
-        print("Lütfen 'sudo python3 test.py' komutu ile çalıştırın.")
+        print("Lütfen 'sudo python3 main.py' komutu ile çalıştırın.")
         sys.exit(1)
 
 if __name__ == "__main__":
